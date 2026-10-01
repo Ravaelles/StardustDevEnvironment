@@ -4,6 +4,14 @@
 
 namespace Log
 {
+    // Semantic log level. Presentation (e.g. console color) is derived from it,
+    // so call sites don't deal with ANSI codes directly (SRP).
+    enum class Level
+    {
+        Info,  // default, terminal default color
+        Muted  // de-emphasized, e.g. gray on console; plain text in file
+    };
+
     class LogWrapper
     {
     protected:
@@ -11,10 +19,11 @@ namespace Log
         int *refCount;
         std::ofstream *logFile;
         bool outputToConsole;
+        Level level;
 
     public:
 
-        LogWrapper(std::ofstream *logFile, bool outputToConsole);
+        LogWrapper(std::ofstream *logFile, bool outputToConsole, Level level = Level::Info);
 
         LogWrapper(const LogWrapper &other);
 
@@ -36,7 +45,7 @@ namespace Log
 
     void SetOutputToConsole(bool outputToConsole);
 
-    LogWrapper Get();
+    LogWrapper Get(Level level = Level::Info);
 
     std::string &LogFileName();
 }

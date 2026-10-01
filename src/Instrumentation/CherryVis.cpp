@@ -4,6 +4,7 @@
 #include <utility>
 #include <zstdstream/zstdstream.hpp>
 #include <filesystem>
+#include <climits>
 
 namespace CherryVis
 {

@@ -4,6 +4,8 @@
 #include <cmath>
 #include <math.h>
 #include <cstdlib>
+#include <climits>
+#include <cstring>
 
 #include <stdexcept>
 #include <string>

@@ -4,6 +4,11 @@
 #include "BWAPI/GameImpl.h"
 #include "gtest/gtest.h"
 #include "Maps.h"
+#include <memory>
+#include <functional>
+#include <unordered_map>
+#include <iostream>
+#include <sstream>
 
 struct UnitTypeAndPosition
 {

@@ -284,7 +284,7 @@ void DemoAIModule::onUnitDestroy(BWAPI::Unit unit)
 {
     if (unit->getPlayer() == BWAPI::Broodwar->self())
     {
-        Log::Get() << "Unit lost: " << unit->getType();
+        Log::Get(Log::Level::Muted) << "Unit lost: " << unit->getType();
     }
 }
 
