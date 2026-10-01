@@ -3,6 +3,7 @@
 #include <fstream>
 #include <chrono>
 #include <ctime>
+#include <cstdlib>
 #include <iomanip>
 
 namespace Log
@@ -15,11 +16,12 @@ namespace Log
         std::ofstream *log;
     }
 
-    LogWrapper::LogWrapper(std::ofstream *logFile, bool outputToConsole)
+    LogWrapper::LogWrapper(std::ofstream *logFile, bool outputToConsole, Level level)
             : os(new std::ostringstream)
             , refCount(new int(1))
             , logFile(logFile)
             , outputToConsole(outputToConsole)
+            , level(level)
     {
         if (!logFile) return;
 
@@ -34,8 +36,18 @@ namespace Log
             , refCount(other.refCount)
             , logFile(other.logFile)
             , outputToConsole(other.outputToConsole)
+            , level(other.level)
     {
         ++*refCount;
+    }
+
+    namespace
+    {
+        bool ansiColorsEnabled()
+        {
+            // Respect NO_COLOR convention (https://no-color.org/)
+            return std::getenv("NO_COLOR") == nullptr;
+        }
     }
 
     LogWrapper::~LogWrapper()
@@ -46,7 +58,14 @@ namespace Log
         {
             if (outputToConsole)
             {
-                std::cout << os->str() << std::endl;
+                if (level == Level::Muted && ansiColorsEnabled())
+                {
+                    std::cout << "\033[90m" << os->str() << "\033[0m" << std::endl;
+                }
+                else
+                {
+                    std::cout << os->str() << std::endl;
+                }
             }
 
             if (logFile)
@@ -84,7 +103,7 @@ namespace Log
         isOutputtingToConsole = outputToConsole;
     }
 
-    LogWrapper Get()
+    LogWrapper Get(Level level)
     {
         if (!log)
         {
@@ -99,7 +118,7 @@ namespace Log
             log->open(logFileName, std::ofstream::trunc);
         }
 
-        return LogWrapper(log, isOutputtingToConsole);
+        return LogWrapper(log, isOutputtingToConsole, level);
     }
 
     std::string &LogFileName()

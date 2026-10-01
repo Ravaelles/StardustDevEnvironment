@@ -100,4 +100,4 @@ namespace Locutus {
 
 }
 
-extern Locutus::FastAPproximation fap;
+extern Locutus::FastAPproximation fap __attribute__((visibility("hidden")));

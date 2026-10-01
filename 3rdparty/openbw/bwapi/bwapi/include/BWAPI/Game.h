@@ -4,6 +4,7 @@
 #include <cstdarg>
 #include <vector>
 #include <tuple>
+#include <cstdint>
 
 #include <BWAPI/Interface.h>
 #include <BWAPI/UnitType.h>

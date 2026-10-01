@@ -5,7 +5,7 @@
 #include "Logger.h"
 #include "Random.h"
 
-Locutus::FastAPproximation fap;
+__attribute__((visibility("hidden"))) Locutus::FastAPproximation fap;
 
 // NOTE FAP does not use UnitInfo.goneFromLastPosition. The flag is always set false
 // on a UnitInfo value which is passed in (CombatSimulation makes sure of it).
