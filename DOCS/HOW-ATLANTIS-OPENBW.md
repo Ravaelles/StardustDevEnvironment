@@ -1,115 +1,115 @@
 # Atlantis (Java) + StardustDevEnvironment (OpenBW) — backend Strategy
 
-Stan: zaimplementowany i zweryfikowany częściowo (szczegóły w §5).
-Ostatnia weryfikacja: `javac` całego Atlantis przechodzi; banner OpenBW
-i polling JBWAPI potwierdzone w locie; handshake klient↔serwer do dokończenia.
+Status: partially implemented and verified (details in §5).
+Last verification: full-Atlantis `javac` passes; OpenBW banner and JBWAPI
+polling confirmed live; client↔server handshake still to do.
 
 ## 1. Problem
 
-Atlantis umiał grać tylko tak: Windows + ChaosLauncher wstrzykujący BWAPI
-do żywego StarCrafta (`Main.localAtlantisSetup` robił `taskkill`, `cmd /c`,
-patch `bwapi.ini`, hook klawiatury, start ChaosLaunchera). Na Linuksie
-z OpenBW model jest odwrotny: zewnętrzny serwer (`BWAPILauncher`) stawia grę,
-a bot (Javy `BWClient`) tylko się do niej przyłącza przez pamięć dzieloną.
-Stary kod wołałby Windowsowe komendy na Linuksie i wywalał się w
-`AKeyboard` (przy braku hooka natywnego robi `System.exit(1)`).
+Atlantis only knew one way to play: Windows + ChaosLauncher injecting BWAPI
+into a live StarCraft (`Main.localAtlantisSetup` ran `taskkill`, `cmd /c`,
+`bwapi.ini` patching, keyboard hook, ChaosLauncher start). On Linux with
+OpenBW the model is inverted: an external server (`BWAPILauncher`) hosts the
+game and the bot (Java `BWClient`) only attaches to it via shared memory.
+The old code would invoke Windows commands on Linux and die in `AKeyboard`
+(which calls `System.exit(1)` when the native hook is unavailable).
 
-## 2. Rozwiązanie: Strategy `GameLauncher` (Atlantis, Java)
+## 2. Solution: `GameLauncher` Strategy (Atlantis, Java)
 
-Pakiet `src/atlantis/config/launcher/`:
+Package `src/atlantis/config/launcher/`:
 
-| Klasa | Rola |
+| Class | Role |
 |---|---|
-| `GameLauncher` | Interfejs strategii: `void launch(String[] args)` — przygotowuje backend, bota startuje potem `Atlantis.run()` |
-| `ChaosGameLauncher` | Stary flow Windows 1:1 (mapa, klawiatura, kill procesów, `bwapi.ini`, ChaosLauncher). Bez zmian zachowania |
-| `OpenBWGameLauncher` | Backend linuksowy: wybiera mapę (doradczo), drukuje banner, **nie** rusza procesów/klawiatury/`bwapi.ini` |
-| `GameLauncherFactory` | Jedyny punkt decyzji: `Env.isOpenBW()` → OpenBW, inaczej Chaos (domyślnie, wstecznie kompatybilne) |
+| `GameLauncher` | Strategy interface: `void launch(String[] args)` — prepares the backend, the bot is started afterwards by `Atlantis.run()` |
+| `ChaosGameLauncher` | Old Windows flow 1:1 (map, keyboard, process kills, `bwapi.ini`, ChaosLauncher). No behavior change |
+| `OpenBWGameLauncher` | Linux backend: picks a map (advisory), prints a banner, touches **neither** processes/keyboard/`bwapi.ini` |
+| `GameLauncherFactory` | Single decision point: `Env.isOpenBW()` → OpenBW, otherwise Chaos (default, backward compatible) |
 
-Wspiera to:
+Supporting changes:
 
-- `Env` (`src/atlantis/config/env/Env.java`): nowy klucz `GAME_LAUNCHER`
-  w `bwapi-data/AI/ENV` (`OPENBW` albo cokolwiek innego = Chaos).
-  Domyślnie Chaos — istniejące setupy Windows działają nietknięte (OCP).
-- `Main.localAtlantisSetup` (`src/main/Main.java`): jedna linijka —
-  `GameLauncherFactory.forCurrentEnv().launch(args)`. Cała logika Windows
-  mieszka w `ChaosGameLauncher`, cała linuksowa w `OpenBWGameLauncher` (SRP).
-- Logika gry (`Atlantis.run()` → `BWClient.startGame()`) nie wie o backendzie
-  (DIP) — blokuje na serwerze niezależnie od tego, kto go postawił.
+- `Env` (`src/atlantis/config/env/Env.java`): new `GAME_LAUNCHER` key
+  in `bwapi-data/AI/ENV` (`OPENBW`, anything else = Chaos).
+  Chaos by default — existing Windows setups keep working untouched (OCP).
+- `Main.localAtlantisSetup` (`src/main/Main.java`): one line —
+  `GameLauncherFactory.forCurrentEnv().launch(args)`. All Windows logic
+  lives in `ChaosGameLauncher`, all Linux logic in `OpenBWGameLauncher` (SRP).
+- Game logic (`Atlantis.run()` → `BWClient.startGame()`) knows nothing about
+  the backend (DIP) — it blocks on the server regardless of who hosts it.
 
-Szablony ENV (czułe na wielkość klucza `GAME_LAUNCHER`, wartość case-insensitive):
+ENV templates (`GAME_LAUNCHER` key is case-sensitive, value is case-insensitive):
 
-- `bwapi-data/AI/ENV LOCAL-EXAMPLE` — dopisany `GAME_LAUNCHER=CHAOS` z komentarzem.
-- `bwapi-data/AI/ENV OPENBW-EXAMPLE` (nowy) — gotowy do skopiowania do
-  (git-ignorowanego) `bwapi-data/AI/ENV`.
-- Żywy `bwapi-data/AI/ENV` jest git-ignorowany — nie ruszamy go w repo.
+- `bwapi-data/AI/ENV LOCAL-EXAMPLE` — appended `GAME_LAUNCHER=CHAOS` with a comment.
+- `bwapi-data/AI/ENV OPENBW-EXAMPLE` (new) — ready to copy over the
+  (git-ignored) `bwapi-data/AI/ENV`.
+- The live `bwapi-data/AI/ENV` is git-ignored — never touch it in the repo.
 
-## 3. Strona serwera (StardustDevEnvironment, C++)
+## 3. Server side (StardustDevEnvironment, C++)
 
-Zero zmian w istniejącym kodzie (OCP) — tylko nowe pliki:
+Zero changes to existing code (OCP) — new files only:
 
-- `scripts/run-openbw-server.sh` — stawia `BWAPILauncher` z katalogu
-  `build/test` (MPQ + `maps/` + `bwapi-data/`), mapa/rasa z argumentów lub
-  `BWAPI_CONFIG_AUTO_MENU__*`. Sprawdza obecność mapy i MPQ przed startem.
-- Ten dokument.
+- `scripts/run-openbw-server.sh` — starts `BWAPILauncher` from
+  `build/test` (MPQs + `maps/` + `bwapi-data/`), map/race from arguments or
+  `BWAPI_CONFIG_AUTO_MENU__*`. Checks map and MPQ presence before starting.
+- This document.
 
-## 4. Przepis na odpalenie (docelowy)
+## 4. Launch recipe (target)
 
 ```bash
-# Terminal 1 — serwer (StardustDevEnvironment):
+# Terminal 1 — server (StardustDevEnvironment):
 ./scripts/run-openbw-server.sh "maps/sscai/(4)Python.scx" Protoss
 
-# Terminal 2 — bot (Atlantis, GAME_LAUNCHER=OPENBW w bwapi-data/AI/ENV):
+# Terminal 2 — bot (Atlantis, GAME_LAUNCHER=OPENBW in bwapi-data/AI/ENV):
 cd /ravaelles/JAVA/starcraft-ai/Atlantis
 java -jar Atlantis.jar
 ```
 
-Oczekiwane na kliencie: banner `[Atlantis] Backend: OpenBW...`, potem
-`BWClient.startGame()` wisi aż serwer postawi grę i gra rusza.
-Mapa/rasa po stronie serwera są wiążące; wybór mapy w `Main` jest doradczy.
+Expected on the client: the `[Atlantis] Backend: OpenBW...` banner, then
+`BWClient.startGame()` blocks until the server hosts a game, and the game runs.
+Map/race on the server side are binding; the map choice in `Main` is advisory.
 
-## 5. Status weryfikacji i co zostało
+## 5. Verification status and remaining work
 
-Zweryfikowane wykonaniem:
+Verified by execution:
 
-1. `javac` całego Atlantis (1380 plików, classpath `lib/*`): `EXIT:0`.
-   Jedyny wyłączony plik to `src/tests/unit/ATargetingTest.java` — pre-existing
-   błąd (import usuniętego `jdk.nashorn.internal`, tryb diff: tylko mode,
-   0 linii treści), nietknięty tą zmianą.
-2. Tryb OpenBW w locie: banner drukuje się, `BWClient.startGame()` przechodzi
-   w polling (`Game table mapping not found` w pętli) zamiast walić
-   Windowsowe komendy — strategia działa.
-3. Serwer: `BWAPILauncher` z `build/test` żyje (`kill -0` po 4 s) przy mapie
-   podanej przez env.
+1. Full-Atlantis `javac` (1380 files, classpath `lib/*`): `EXIT:0`.
+   The only excluded file is `src/tests/unit/ATargetingTest.java` — a
+   pre-existing failure (import of the removed `jdk.nashorn.internal`, diff
+   mode-only, 0 content lines), untouched by this change.
+2. OpenBW mode live: the banner prints, `BWClient.startGame()` enters polling
+   (`Game table mapping not found` in a loop) instead of firing Windows
+   commands — the strategy works.
+3. Server: `BWAPILauncher` from `build/test` stays alive (`kill -0` after 4 s)
+   with an env-provided map.
 
-Nie działa jeszcze: handshake klient↔serwer. Ustalenia z kodu (twarde):
+Not working yet: the client↔server handshake. Hard findings from the code:
 
-- `JBWAPI-Rav.jar` gada protokołem POSIX: `ClientConnectionPosix`
-  (AF_UNIX socket + `PosixShm`, pakiet `org.newsclub.net.unix` w jarze).
-- Ten fork OpenBW/BWAPI nie ma serwera unix-socketowego: `Server::checkForConnections()`
-  w `3rdparty/openbw/bwapi/bwapi/BWAPI/Source/BWAPI/Server.cpp:149` jest **pusty**,
-  bloki `if (serverEnabled)` w konstruktorze też. `Main.cpp:31` wymaga
-  `externalModuleConnected`, ustawianego w `GameUpdate.cpp:363` tylko gdy
-  `server.isConnected()` — na Linuksie ta ścieżka jest martwa.
-- Wniosek: brakuje mostu klienckiego po stronie serwera. Opcje:
-  **(a)** serwer z brancha `linux-client-support` forka `basil-ladder/bwapi`
-  (do tego odnosi się `JavaBWAPI/.../build_with_openbw.md`; jego README
-  wprost mówi: *"Using a client bot — Currently, only JBWAPI bots are
-  supported"*),
-  **(b)** mini-host C++ w tym repo (np. `tests-atlantis`) osadzający most
-  kompatybilny z `ClientConnectionPosix`, z API jak `BWTest` (fork + sloty).
-  Dopiero wtedy możliwa pełna gra Atlantis vs Steamhammer/Locutus.
+- `JBWAPI-Rav.jar` speaks the POSIX protocol: `ClientConnectionPosix`
+  (AF_UNIX socket + `PosixShm`, package `org.newsclub.net.unix` in the jar).
+- This OpenBW/BWAPI fork has no unix-socket server: `Server::checkForConnections()`
+  in `3rdparty/openbw/bwapi/bwapi/BWAPI/Source/BWAPI/Server.cpp:149` is **empty**,
+  and so are the `if (serverEnabled)` blocks in the constructor. `Main.cpp:31`
+  requires `externalModuleConnected`, set in `GameUpdate.cpp:363` only when
+  `server.isConnected()` — a dead path on Linux.
+- Conclusion: the client bridge is missing on the server side. Options:
+  **(a)** a server from the `linux-client-support` branch of the
+  `basil-ladder/bwapi` fork (which is what
+  `JavaBWAPI/.../build_with_openbw.md` refers to; its README states outright:
+  *"Using a client bot — Currently, only JBWAPI bots are supported"*),
+  **(b)** a mini C++ host in this repo (e.g. `tests-atlantis`) embedding a
+  `ClientConnectionPosix`-compatible bridge, with a `BWTest`-like API
+  (fork + slots). Only then can a full Atlantis vs Steamhammer/Locutus game happen.
 
-Protokół, którego serwer musi dochować (z dekompilacji `JBWAPI-Rav.jar`,
-`bwapi/ClientConnectionPosix`): segment `/bwapi_shared_memory_game_list`
-(JBWAPI polluje go w pętli — stąd komunikat `Game table mapping not found`),
-dalej `/bwapi_shared_memory_<id>` na grę oraz gniazdo AF_UNIX
-`/tmp/bwapi_socket_<id>` do synchronizacji klatek i komend. Ten fork nie
-tworzy żadnego z nich.
+Protocol the server must honor (decompiled from `JBWAPI-Rav.jar`,
+`bwapi/ClientConnectionPosix`): the `/bwapi_shared_memory_game_list` segment
+(JBWAPI polls it in a loop — hence `Game table mapping not found`), then
+`/bwapi_shared_memory_<id>` per game plus the AF_UNIX socket
+`/tmp/bwapi_socket_<id>` for frame sync and commands. This fork creates none
+of them.
 
-## 6. Gdzie mieszka Atlantis
+## 6. Where Atlantis lives
 
-Sibling: `/ravaelles/JAVA/starcraft-ai/Atlantis` (obok `StardustDevEnvironment/`),
-**nie** wewnątrz niego. Osobne repo, osobny build (IntelliJ vs CMake —
-CMake-owe `file(GLOB)` nie powinno widzieć Javy), czysty upstream env,
-współdzielone MPQ na poziomie `starcraft-ai/`. Jedyny styk w env to ten
-dokument + skrypt serwerowy.
+Sibling: `/ravaelles/JAVA/starcraft-ai/Atlantis` (next to `StardustDevEnvironment/`),
+**not** inside it. Separate repo, separate build (IntelliJ vs CMake —
+CMake `file(GLOB)` must not see Java), clean upstream env, MPQs shared at the
+`starcraft-ai/` level. The only coupling inside the env is this document +
+the server script.
